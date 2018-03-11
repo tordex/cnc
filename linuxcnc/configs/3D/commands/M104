@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# M104: Set Extruder Temperature
+# Example: M104 P200
+# Mandatory parameter 'P' specifies the temperature setpoint.
+
+halcmd setp arduino.temp-out-extruder $1
+
+exit 0

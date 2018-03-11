@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# M140: Set Bed Temperature
+# Example: M140 P200
+# Mandatory parameter 'P' specifies the temperature setpoint.
+
+halcmd setp arduino.temp-out-bed $1
+
+exit 0

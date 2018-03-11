@@ -1,0 +1,392 @@
+#!/usr/bin/python
+
+import sys
+import os
+import gettext
+from PIL import Image
+import numpy.core
+import rs274.options
+from math import *
+
+BASE = "/usr" #os.environ['EMC2_HOME']
+sys.path.insert(0, os.path.join(BASE, "lib", "python"))
+gettext.install("linuxcnc", localedir=os.path.join(BASE, "share", "locale"), unicode=True)
+plus_inf = numpy.core.Inf
+
+
+def convert(img, point_size, feed, margins):
+    dirrection = 1
+    off = 0
+    pos_y = 0.0
+    pos_x = 0.0
+    width, height = img.size
+
+    #print ("G21\nG64 P0.001")
+    print ("G21\nG61\nG64")
+    print ("M68 E0 Q0")
+    print ("G0 X0 Y0")
+    print ("M3 S1")
+    print ("G1 F%d" % feed)
+
+    for x in range(0, width, 1):
+        old_power = 0
+        print ("(row %d of %d)" % (x + 1, width))
+        print ("M67 E0 Q0")
+        if dirrection == 1:
+            pos_y = margins
+            print ("Y%.3f" % (pos_y))
+        else:
+            pos_y -= margins
+            print ("Y%.3f" % (pos_y))
+        for y in range(0, height, 1):
+            if dirrection == 1:
+                pt_x = x
+                pt_y = y
+                pos_y += point_size
+            else:
+                pt_x = x
+                pt_y = height - y - 1
+                pos_y -= point_size
+            power = 255 - img.getpixel((pt_x, height - pt_y - 1))
+            #if old_power != power:
+            print ("M67 E0 Q%d" % (power))
+            #old_power = power
+            print ("Y%.3f" % (pos_y))
+        print ("M67 E0 Q0")
+        if dirrection == 1:
+            dirrection = 0
+            pos_y += margins
+        else:
+            dirrection = 1
+            pos_y = 0
+        print ("Y%.3f" % (pos_y))
+        pos_x += point_size
+        print ("X%.3f" % pos_x)
+
+    print ("M68 E0 Q0")
+    print ("M5")
+    print ("G0 X0 Y0")
+    print ("M2")
+
+
+def change_contrast(img, level):
+    factor = (259.0 * (level + 255.0)) / (255.0 * (259.0 - level))
+
+    def contrast(c):
+        value = int(128.0 + factor * (c - 128.0))
+        return max(0, min(255, value))
+    return img.point(contrast)
+
+
+def change_brightness(img, level):
+    factor = float(100 - level) / 100.0
+
+    def brightness(c):
+        if factor >= 0:
+            out = 255 * (1.0 - factor) + c * factor
+        else:
+            out = c * factor
+        return max(0, min(255, out))
+    return img.point(brightness)
+
+
+def enhance_image(img, contrast, brightness):
+    new_img = img
+    if contrast != 0:
+        new_img = change_contrast(new_img, contrast)
+    if brightness != 0:
+        new_img = change_brightness(new_img, brightness)
+
+    return new_img
+
+
+def ui(im, im_name):
+    import Tkinter
+    import ImageTk
+    import pickle
+    import nf
+
+    app = Tkinter.Tk()
+    rs274.options.install(app)
+    app.tk.call("source", os.path.join(BASE, "share", "axis", "tcl", "combobox.tcl"))
+
+    name = os.path.basename(im_name)
+    app.wm_title(_("%s: Raster to gcode") % name)
+    app.wm_iconname(_("Raster to gcode"))
+    w, h = im.size
+    r1 = w / 550.
+    r2 = h / 550.
+    nw = int(w / max(r1, r2))
+    nh = int(h / max(r1, r2))
+    img_aspect_ratio = float(w) / float(h)
+
+    class UI_Image:
+        src_image = None
+        label = None
+
+    ui_image = im.resize((nw, nh), Image.ANTIALIAS)
+    UI_Image.src_image = ui_image
+    ui_image = ImageTk.PhotoImage(ui_image, master=app)
+    i = Tkinter.Label(app, image=ui_image, compound="top",
+                      text=_("Image size: %(w)d x %(h)d pixels") % {'w': im.size[0], 'h': im.size[1]},
+                      justify="left")
+    UI_Image.label = i
+    f = Tkinter.Frame(app)
+    g = Tkinter.Frame(app)
+    b = Tkinter.Frame(app)
+    i.grid(row=0, column=0, sticky="nw")
+    f.grid(row=0, column=1, sticky="nw")
+    b.grid(row=1, column=0, columnspan=2, sticky="ne")
+
+    def filter_nonint(event):
+        if event.keysym in ("Return", "Tab", "ISO_Left_Tab", "BackSpace"):
+            return
+        if event.char == "":
+            return
+        if event.char in "0123456789":
+            return
+        return "break"
+
+    def filter_nonfloat(event):
+        if event.keysym in ("Return", "Tab", "ISO_Left_Tab", "BackSpace"):
+            return
+        if event.char == "":
+            return
+        if event.char in "0123456789.":
+            return
+        return "break"
+        
+    validate_float    = "expr {![regexp {^-?([0-9]+(\.[0-9]*)?|\.[0-9]+|)$} %P]}"
+    validate_int      = "expr {![regexp {^-?([0-9]+|)$} %P]}"
+    validate_posfloat = "expr {![regexp {^?([0-9]+(\.[0-9]*)?|\.[0-9]+|)$} %P]}"
+    validate_posint   = "expr {![regexp {^([0-9]+|)$} %P]}"
+
+    def floatentry(f, v):
+        var = Tkinter.DoubleVar(f)
+        var.set(v)
+        w = Tkinter.Entry(f, textvariable=var, validatecommand=validate_float, validate="key", width=10)
+        return w, var, False
+
+    def intentry(f, v):
+        var = Tkinter.IntVar(f)
+        var.set(v)
+        w = Tkinter.Entry(f, textvariable=var, validatecommand=validate_int, validate="key", width=10)
+        return w, var, False
+
+    def checkbutton(k, v):
+        var = Tkinter.BooleanVar(f)
+        var.set(v)
+        g = Tkinter.Frame(f)
+        w = Tkinter.Checkbutton(g, variable=var, text=_("Yes"))
+        w.pack(side="left")
+        return g, var, False
+
+    def intscale_brightness(k, v, min=-100, max = 100):
+        var = Tkinter.IntVar(f)
+        var.set(v)
+        g = Tkinter.Frame(f, borderwidth=0)
+        w = Tkinter.Scale(g, orient="h", variable=var, from_=min, to=max, showvalue=False)
+        l = Tkinter.Label(g, textvariable=var, width=3)
+        l.pack(side="left")
+        w.pack(side="left", fill="x", expand=1)
+        return g, var, True
+
+    def intscale_contrast(k, v, min=-255, max = 255):
+        var = Tkinter.IntVar(f)
+        var.set(v)
+        g = Tkinter.Frame(f, borderwidth=0)
+        w = Tkinter.Scale(g, orient="h", variable=var, from_=min, to=max, showvalue=False)
+        l = Tkinter.Label(g, textvariable=var, width=3)
+        l.pack(side="left")
+        w.pack(side="left", fill="x", expand=1)
+        return g, var, True
+
+    def _optionmenu(k, v, *options):
+        options = list(options)
+
+        def trace(*args):
+            try:
+                var.set(options.index(svar.get()))
+            except ValueError:
+                pass
+
+        try:
+            opt = options[v]
+        except (TypeError, IndexError):
+            v = 0
+            opt = options[0]
+
+        var = Tkinter.IntVar(f)    
+        var.set(v)
+        svar = Tkinter.StringVar(f)
+        svar.set(options[v])
+        svar.trace("w", trace)
+        wp = f._w.rstrip(".") + ".c" + svar._name
+        f.tk.call("combobox::combobox", wp, "-editable", 0, "-width",
+                max(len(opt) for opt in options)+3, "-textvariable", svar._name,
+                "-background", "white")
+        f.tk.call(wp, "list", "insert", "end", *options)
+        w = nf.makewidget(f, Tkinter.Widget, wp)
+        return w, var
+
+    def optionmenu(*options): return lambda f, v: _optionmenu(f, v, *options)
+
+    rc = os.path.expanduser("~/.raster2gcoderc")
+    constructors = [
+        ("keep_ar", checkbutton),
+        ("width", intentry),
+        ("height", intentry),
+        ("point_size", floatentry),
+        ("feed_rate", intentry),
+        ("margins", intentry),
+        ("contrast", intscale_contrast),
+        ("brightness", intscale_brightness),
+    ]
+
+    defaults = dict(
+        keep_ar=True,
+        width=w,
+        height=h,
+        point_size=0.1,
+        feed_rate=3000,
+        margins=5,
+        contrast=0,
+        brightness=0,
+    )
+
+    texts = dict(
+        keep_ar=_("Keep aspect ratio"),
+        width=_("Picture Width (mm)"),
+        height=_("Picture height (mm)"),
+        point_size=_("Point size (mm)"),
+        feed_rate=_("Feed Rate (mm per minute)"),
+        margins=_("Acceleration margins (mm)"),
+        contrast=_("Image contrast"),
+        brightness=_("Image brightness")
+    )
+
+    try:
+        defaults.update(pickle.load(open(rc, "rb")))
+    except (IOError, pickle.PickleError): pass
+
+    vars = {}
+    widgets = {}
+
+    class TraceScope:
+        lock_trace = False
+
+    row = 0
+    for k, con in constructors:
+        v = defaults[k]
+        text = texts.get(k, k.replace("_", " "))
+        lab = Tkinter.Label(f, text=text)
+        widgets[k], vars[k], ltop = con(f, v)
+        if ltop:
+            lab.grid(row=row, column=0, columnspan=2, sticky="w")
+            row += 1
+            widgets[k].grid(row=row, column=0, columnspan=2, sticky="ew")
+        else:
+            lab.grid(row=row, column=0, sticky="w")
+            widgets[k].grid(row=row, column=1, sticky="ew")
+        row += 1
+
+
+    def trace_width(*args):
+        if vars['keep_ar'].get() and not TraceScope.lock_trace:
+            TraceScope.lock_trace = True
+            try:
+                new_height = int(float(vars['width'].get()) / img_aspect_ratio)
+                vars['height'].set(new_height)
+            except:
+                pass
+            TraceScope.lock_trace = False
+
+    def trace_height(*args):
+        if vars['keep_ar'].get() and not TraceScope.lock_trace:
+            TraceScope.lock_trace = True
+            try:
+                new_width = int(float(vars['height'].get()) * img_aspect_ratio)
+                vars['width'].set(new_width)
+            except:
+                pass
+            TraceScope.lock_trace = False
+
+    def trace_ar(*args):
+        if vars['keep_ar'].get():
+            trace_width()
+
+    def trace_image(*args):
+        try:
+            new_img = enhance_image(UI_Image.src_image, vars['contrast'].get(), vars['brightness'].get())
+            new_img = ImageTk.PhotoImage(new_img, master=app)
+            UI_Image.label.configure(image=new_img)
+            UI_Image.label.image = new_img
+        except:
+            pass
+
+    vars['width'].trace('w', trace_width)
+    vars['height'].trace('w', trace_height)
+    vars['keep_ar'].trace('w', trace_ar)
+    vars['contrast'].trace('w', trace_image)
+    vars['brightness'].trace('w', trace_image)
+
+    trace_width()
+    trace_image()
+
+    status = Tkinter.IntVar()
+    bb = Tkinter.Button(b, text=_("OK"), command=lambda:status.set(1), width=8, default="active")
+    bb.pack(side="left", padx=4, pady=4)
+    bb = Tkinter.Button(b, text=_("Cancel"), command=lambda:status.set(-1), width=8, default="normal")
+    bb.pack(side="left", padx=4, pady=4)
+    
+    app.bind("<Escape>", lambda evt: status.set(-1))
+    app.bind("<Return>", lambda evt: status.set(1))
+    app.wm_protocol("WM_DELETE_WINDOW", lambda: status.set(-1))
+    app.wm_resizable(0, 0)
+
+    app.wait_visibility()
+    app.tk.call("after", "idle", ("after", "idle", "focus [tk_focusNext .]"))
+    app.wait_variable(status)
+
+    for k, v in vars.items():
+        defaults[k] = v.get()
+
+    app.destroy()
+
+    if status.get() == -1:
+        raise SystemExit(_("image-to-gcode: User pressed cancel"))
+
+    pickle.dump(defaults, open(rc, "wb"))
+
+    return defaults
+
+
+def main():
+    if len(sys.argv) > 1:
+        im_name = sys.argv[1]
+    else:
+        import tkFileDialog, Tkinter
+        im_name = tkFileDialog.askopenfilename(defaultextension=".png",
+                                               filetypes=(
+                                                   (_("Depth images"), ".gif .png .jpg"),
+                                                   (_("All files"), "*")))
+        if not im_name:
+            raise SystemExit
+        Tkinter._default_root.destroy()
+        Tkinter._default_root = None
+    im = Image.open(im_name)
+    im = im.convert("L") #grayscale
+    w, h = im.size
+    options = ui(im, im_name)
+    new_width = int(float(options['width']) / float(options['point_size']))
+    new_height = int(float(options['height']) / float(options['point_size']))
+    im = im.resize((new_width, new_height), Image.ANTIALIAS)
+    im = enhance_image(im, options['contrast'], options['brightness'])
+    convert(im, options['point_size'], options['feed_rate'], options['margins'])
+
+
+if __name__ == '__main__':
+    main()
+
+# vim:sw=4:sts=4:et:
+

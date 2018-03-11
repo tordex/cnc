@@ -1,0 +1,57 @@
+#!/usr/bin/python
+
+import termctl
+import hal
+import sys
+import time
+
+sys.stdout = open("/tmp/arduino.log", "w")
+
+PORT = "/dev/ttyUSB0"
+
+if len(sys.argv) > 1:
+    PORT = sys.argv[1]
+
+ctl = termctl.TemperatureControl(PORT)
+time.sleep(3)
+c = hal.component("arduino")
+
+c.newpin("temp-in-extruder", hal.HAL_FLOAT, hal.HAL_OUT)
+c.newpin("temp-out-extruder", hal.HAL_FLOAT, hal.HAL_IN)
+c.newpin("temp-in-bed", hal.HAL_FLOAT, hal.HAL_OUT)
+c.newpin("temp-out-bed", hal.HAL_FLOAT, hal.HAL_IN)
+
+c.ready()
+
+try:
+    while 1:
+        try:
+            # Get temperature
+            info_temp = ctl.get_temp(termctl.HOTEND_EXTRUDER)
+            if info_temp is not None:
+                c['temp-in-extruder'] = int(info_temp['extruder'])
+                c['temp-in-bed'] = int(info_temp['hotbed'])
+            else:
+                print "Got None temperature"
+            # Set temperature
+            ctl.set_temperature(termctl.HOTEND_EXTRUDER, int(c['temp-out-extruder']))
+            ctl.set_temperature(termctl.HOTEND_BED, int(c['temp-out-bed']))
+            time.sleep(.5)
+        except (KeyboardInterrupt,):
+            raise SystemExit, 0
+        except:
+            print "Unknown exeption. Reconnecting..."
+            is_ok = False
+            ctl.close()
+            ctl = None
+            while not is_ok:
+                try:
+                    ctl = termctl.TemperatureControl(PORT)
+                    is_ok = True
+                except:
+                    print "Reconnection failed... try again"
+                    time.sleep(0.5)
+            time.sleep(3)
+            print "Reconnected!"
+except (KeyboardInterrupt,):
+    raise SystemExit, 0

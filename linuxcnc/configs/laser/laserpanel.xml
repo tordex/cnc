@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<pyvcp>
+	<table>
+	<tablerow/>
+		<label text="PWM Laser:"/>
+		<number halpin="laser-power" width="5"/>
+	<tablerow/>
+		<label text="TTL Laser:"/>
+		<led halpin="ttl-laser-led" size="30" on_color="green" off_color="gray"/>
+        </table>
+	<hbox>
+		<button text="TTL OFF" halpin="ttl-off"/>
+		<button text="PWM OFF" halpin="pwm-off"/> 
+	</hbox>
+	<button text="Set Zero" halpin="set-zero"/>
+	<button text="Go to Zero" halpin="go-zero"/>
+</pyvcp>

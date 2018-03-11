@@ -1,0 +1,7 @@
+#!/bin/sh
+
+# M106: Fan
+# Example: M104 P200
+# Mandatory parameter 'P' specifies the temperature setpoint.
+
+exit 0

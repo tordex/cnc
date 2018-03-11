@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# M109: Set Extruder Temperature and Wait 
+# M109 in Marlin, Sprinter (ATmega port)
+# Set extruder heater temperature in degrees celsius and wait for this
+# temperature to be achieved.
+# Example: M109 P185 
+
+temp_required=$1
+temp_actual=$(halcmd getp arduino.temp-in-extruder)
+
+halcmd setp arduino.temp-out-extruder $temp_required
+T_extruder_smaller_than_T_required=`echo "scale=3; ($temp_actual < $temp_required)"| bc -l`
+while [ "$T_extruder_smaller_than_T_required" != "0" ]
+do
+  temp_actual=$(halcmd getp arduino.temp-in-extruder)
+  sleep 1
+  T_extruder_smaller_than_T_required=`echo "scale=3; ($temp_actual < $temp_required)"| bc -l`
+done
+exit 0

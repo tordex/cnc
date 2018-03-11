@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<pyvcp>
+	<table>
+	<tablerow/>
+		<label text="Extruder:"/>
+		<number halpin="extruder-temp" width="5"/>
+		<number halpin="extruder-temp-out" width="5"/>
+	<tablerow/>
+		<label text="Bed:"/>
+		<number halpin="bed-temp" width="5"/>
+		<number halpin="bed-temp-out" width="5"/>
+        </table>
+</pyvcp>

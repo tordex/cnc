@@ -1,0 +1,36 @@
+# Include your customized HAL commands here
+# The commands in this file are run after the AXIS GUI (including PyVCP panel) starts
+
+# **** Setup of spindle speed display using pyvcp -START ****
+# **** Use COMMANDED spindle velocity from LinuxCNC because no spindle encoder was specified
+
+net spindle-cmd-rpm-abs    => pyvcp.spindle-speed
+
+# **** force spindle at speed indicator true because we have no feedback ****
+
+net spindle-at-speed => pyvcp.spindle-at-speed-led
+sets spindle-at-speed true
+
+# set up the z-axis touchoff button
+net remote-z-axis-touchoff classicladder.0.in-00 <= pyvcp.z-axis-touchoff
+# set to mdi mode
+# show pin
+net mode halui.mode.is-mdi => classicladder.0.in-01
+
+# wait for motion to finish Use this file if you are using the EMC2 version 2.3.x or newer.
+net in_pos motion.in-position => classicladder.0.in-02
+
+# wait for motion to finish Use this for motion if you are using version 2.2.X or older of EMC2
+
+#net in_pos motion.motion-inpos => classicladder.0.in-02
+# mdi command 1 MDI_COMMAND = G38.2 Z-3 F16
+net z-touchoff classicladder.0.out-00 => halui.mdi-command-00
+
+# mdi command 2 MDI_COMMAND = G92 Z0.25
+net z-zero classicladder.0.out-01 => halui.mdi-command-01
+
+# mdi command 3 MDI_COMMAND = G0 Z1
+#net rapid-away classicladder.0.out-02 => halui.mdi-command-02
+
+# mdi command 4 MDI_COMMAND = G0 X-2 Y1
+net zero-x-y halui.mdi-command-03 <= pyvcp.x-y_zero

@@ -1,0 +1,7 @@
+# Include your customized HAL commands here
+# The commands in this file are run after the AXIS GUI (including PyVCP panel) starts
+
+net temp-extr-in => pyvcp.extruder-temp
+net temp-bed-in => pyvcp.bed-temp
+#net temp-extr-out => pyvcp.extruder-temp-out
+#net temp-bed-out => pyvcp.bed-temp-out
