@@ -36,6 +36,12 @@
 		</button>
 
 		<button>
+		<halpin>"z-axis-touchoff-pcb"</halpin>
+		<text>"Z-Axis Touchoff PCB"</text>
+		<font>('Fixed',12)</font>
+		</button>
+
+		<button>
 		<halpin>"x-y_zero"</halpin>
 		<text>"X-Y Zero"</text>
 		<font>('Fixed',12)</font>

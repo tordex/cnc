@@ -13,6 +13,7 @@ sets spindle-at-speed true
 
 # mdi command 1 MDI_COMMAND = o100 call
 net z-axis-touchoff halui.mdi-command-00 <= pyvcp.z-axis-touchoff
+net z-axis-touchoff-pcb halui.mdi-command-02 <= pyvcp.z-axis-touchoff-pcb
 
 # mdi command 2 MDI_COMMAND = G10 L20 P0 X0 Y0
 net zero-x-y halui.mdi-command-01 <= pyvcp.x-y_zero
