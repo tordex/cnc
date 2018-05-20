@@ -12,22 +12,25 @@ PORT = "/dev/ttyUSB0"
 if len(sys.argv) > 1:
     PORT = sys.argv[1]
 
-ctl = termctl.TemperatureControl(PORT)
-time.sleep(3)
 c = hal.component("arduino")
 
 c.newpin("temp-in-extruder", hal.HAL_FLOAT, hal.HAL_OUT)
 c.newpin("temp-out-extruder", hal.HAL_FLOAT, hal.HAL_IN)
 c.newpin("temp-in-bed", hal.HAL_FLOAT, hal.HAL_OUT)
 c.newpin("temp-out-bed", hal.HAL_FLOAT, hal.HAL_IN)
+c.newpin("fan-out", hal.HAL_FLOAT, hal.HAL_IN)
 
 c.ready()
+
+ctl = termctl.TemperatureControl(PORT)
+time.sleep(5)
 
 try:
     while 1:
         try:
             # Get temperature
             info_temp = ctl.get_temp(termctl.HOTEND_EXTRUDER)
+            print(info_temp)
             if info_temp is not None:
                 c['temp-in-extruder'] = int(info_temp['extruder'])
                 c['temp-in-bed'] = int(info_temp['hotbed'])
@@ -36,6 +39,10 @@ try:
             # Set temperature
             ctl.set_temperature(termctl.HOTEND_EXTRUDER, int(c['temp-out-extruder']))
             ctl.set_temperature(termctl.HOTEND_BED, int(c['temp-out-bed']))
+            ctl.set_fan(0, int(c['fan-out']))
+            #ctl.set_temperature(termctl.HOTEND_EXTRUDER, 0)
+            #ctl.set_temperature(termctl.HOTEND_BED, 0)
+            #ctl.set_fan(0, 0)
             time.sleep(.5)
         except (KeyboardInterrupt,):
             raise SystemExit, 0

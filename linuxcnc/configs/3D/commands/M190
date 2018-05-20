@@ -9,7 +9,7 @@
 temp_required=$1
 temp_actual=$(halcmd getp arduino.temp-in-bed)
 
-halcmd setp arduino.temp-out-bed $temp_required
+halcmd sets bed $temp_required
 T_extruder_smaller_than_T_required=`echo "scale=3; ($temp_actual < $temp_required)"| bc -l`
 while [ "$T_extruder_smaller_than_T_required" != "0" ]
 do

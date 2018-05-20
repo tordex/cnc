@@ -108,9 +108,9 @@ net estop-out <= iocontrol.0.user-enable-out
 net estop-out => iocontrol.0.emc-enable-in
 
 loadusr -W arduino /dev/ttyUSB0
-
 net temp-extr-in motion.analog-in-00 <= arduino.temp-in-extruder
-#net temp-extr-out arduino.temp-out-extruder <= motion.analog-out-00
-
 net temp-bed-in motion.analog-in-01 <= arduino.temp-in-bed
-#net temp-bed-out arduino.temp-out-bed <= motion.analog-out-01
+
+net fan => arduino.fan-out
+net extruder => arduino.temp-out-extruder
+net bed => arduino.temp-out-bed

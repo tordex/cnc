@@ -14,6 +14,7 @@ CMD_SET_TEMPERATURE = 0x82
 CMD_START_TUNING = 0x83
 CMD_STOP_TUNING = 0x84
 CMD_GET_TEMP = 0x85
+CMD_SET_FAN = 0x86
 
 
 class TemperatureControl:
@@ -62,15 +63,17 @@ class TemperatureControl:
                     for b in rx_buffer:
                         cs ^= b
                     if cs != cs_get:
+                        print("Incorrect CRC")
                         return None
                     return rx_buffer
             time.sleep(.1)
-        print("Serial Timeout.")
+        print("Serial Timeout. rxlen: {0}".format(rx_len))
         return None
 
     def get_data(self, hotend):
         data = bytearray([])
         self._send_packet(hotend, CMD_GET_DATA, data)
+        time.sleep(0.1)
         data = self._receive_packet()
         if data is None:
             return None
@@ -111,4 +114,8 @@ class TemperatureControl:
     def stop_tuning(self, hotend):
         data = bytearray([])
         self._send_packet(hotend, CMD_STOP_TUNING, data)
+
+    def set_fan(self, fanid, speed):
+        data = bytearray(struct.pack("I", int(speed)))
+        self._send_packet(fanid, CMD_SET_FAN, data)
 

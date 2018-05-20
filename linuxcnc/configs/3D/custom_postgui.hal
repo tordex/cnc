@@ -3,5 +3,24 @@
 
 net temp-extr-in => pyvcp.extruder-temp
 net temp-bed-in => pyvcp.bed-temp
-#net temp-extr-out => pyvcp.extruder-temp-out
-#net temp-bed-out => pyvcp.bed-temp-out
+net fan => pyvcp.fan-out
+net extruder => pyvcp.extruder-temp-out
+net bed => pyvcp.bed-temp-out
+
+# mdi command 0 MDI_COMMAND = G10 L20 P1 X0 Y0
+net zero-x-y halui.mdi-command-00 <= pyvcp.zero-x-y
+
+# mdi command 1 MDI_COMMAND = G10 L20 P1 Z0
+net zero-z halui.mdi-command-01 <= pyvcp.zero-z
+
+# mdi command 2 MDI_COMMAND = G10 L20 P1 A0
+net zero-a halui.mdi-command-02 <= pyvcp.zero-a
+
+# mdi command 3 MDI_COMMAND = M104 P0
+net off-extruder halui.mdi-command-03 <= pyvcp.off-extruder
+
+# mdi command 4 MDI_COMMAND = M140 P0
+net off-bed halui.mdi-command-04 <= pyvcp.off-bed
+
+# mdi command 5 MDI_COMMAND = M107
+net off-fan halui.mdi-command-05 <= pyvcp.off-fan

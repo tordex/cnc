@@ -2,12 +2,48 @@
 <pyvcp>
 	<table>
 	<tablerow/>
-		<label text="Extruder:"/>
-		<number halpin="extruder-temp" width="5"/>
-		<number halpin="extruder-temp-out" width="5"/>
+		<label text="Extruder:" font="('Fixed',12)"/>
+		<number halpin="extruder-temp" width="5" font="('Fixed',12)"/>
+		<number halpin="extruder-temp-out" width="5" font="('Fixed',12)"/>
+		<button>
+			<halpin>"off-extruder"</halpin>
+			<text>"OFF"</text>
+		</button>
 	<tablerow/>
-		<label text="Bed:"/>
-		<number halpin="bed-temp" width="5"/>
-		<number halpin="bed-temp-out" width="5"/>
+		<label text="Bed:" font="('Fixed',12)"/>
+		<number halpin="bed-temp" width="5" font="('Fixed',12)"/>
+		<number halpin="bed-temp-out" width="5" font="('Fixed',12)"/>
+		<button>
+			<halpin>"off-bed"</halpin>
+			<text>"OFF"</text>
+		</button>
+	<tablerow/>
+		<label text="FAN:" font="('Fixed',12)"/>
+		<label text=" " font="('Fixed',12)"/>
+		<number halpin="fan-out" width="5" font="('Fixed',12)"/>
+		<button>
+			<halpin>"off-fan"</halpin>
+			<text>"OFF"</text>
+		</button>
         </table>
+	<labelframe text="Zero Axes">
+		<button>
+		<halpin>"zero-x-y"</halpin>
+		<text>"X-Y Zero"</text>
+		<font>('Fixed',12)</font>
+		</button>
+
+		<button>
+		<halpin>"zero-z"</halpin>
+		<text>"Z-Axis Zero"</text>
+		<font>('Fixed',12)</font>
+		</button>
+
+		<button>
+		<halpin>"zero-a"</halpin>
+		<text>"Extruder Zero"</text>
+		<font>('Fixed',12)</font>
+		</button>
+
+	</labelframe>
 </pyvcp>
