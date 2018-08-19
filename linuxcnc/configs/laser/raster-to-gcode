@@ -8,8 +8,8 @@ import numpy.core
 import rs274.options
 from math import *
 
-# BASE = "/usr" #os.environ['EMC2_HOME']
-BASE = os.environ['EMC2_HOME']
+BASE = "/usr"
+# BASE = os.environ['EMC2_HOME']
 sys.path.insert(0, os.path.join(BASE, "lib", "python"))
 gettext.install("linuxcnc", localedir=os.path.join(BASE, "share", "locale"), unicode=True)
 plus_inf = numpy.core.Inf
@@ -95,7 +95,7 @@ def get_y_pos(y_data):
         start = float(y_data["y"])
         end = float(y_data["y"]) + float(y_data["len"])
     else:
-        start = float(y_data["y"]) + float(y_data["len"])
+        start = float(y_data["y"]) - float(y_data["len"])
         end = float(y_data["y"])
 
     return start, end
@@ -113,7 +113,7 @@ def convert(img, point_size, feed, margins, pwm):
 
     need_g0 = True
     for x_data in colors:
-        x_pos = float(x_data["x"]) * point_size
+        x_pos = float(x_data["x"])
         new_line = True
         for y_data in x_data["colors"]:
             y_start, y_end = get_y_pos(y_data)
