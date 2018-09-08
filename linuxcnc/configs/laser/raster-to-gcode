@@ -8,62 +8,126 @@ import numpy.core
 import rs274.options
 from math import *
 
-BASE = "/usr" #os.environ['EMC2_HOME']
+BASE = "/usr"
+# BASE = os.environ['EMC2_HOME']
 sys.path.insert(0, os.path.join(BASE, "lib", "python"))
 gettext.install("linuxcnc", localedir=os.path.join(BASE, "share", "locale"), unicode=True)
 plus_inf = numpy.core.Inf
 
 
-def convert(img, point_size, feed, margins):
-    dirrection = 1
-    off = 0
-    pos_y = 0.0
-    pos_x = 0.0
+def img_to_array(img, point_size, margins):
     width, height = img.size
 
-    #print ("G21\nG64 P0.001")
+    colors = []
+    direction = 1
+    for x in range(0, width, 1):
+        x_data = {
+                "x": float(x - width / 2) * point_size,
+                "colors": []
+            }
+        add = False
+        last_nonzero_pixel = -1
+        for y in range(0, height, 1):
+            pixel = 255 - img.getpixel((x, height - y - 1))
+            if len(x_data["colors"]) > 0 and x_data["colors"][-1]["pixel"] == pixel:
+                x_data["colors"][-1]["len"] += direction * point_size
+            else:
+                if len(x_data["colors"]) > 0 or pixel != 0:
+                    x_data["colors"].append({
+                        "y": float(y - height / 2) * point_size,
+                        "len": direction * point_size,
+                        "pixel": pixel
+                    })
+                    if pixel != 0:
+                        last_nonzero_pixel = len(x_data["colors"]) - 1
+            if not add and pixel != 0:
+                add = True
+        if add:
+            if last_nonzero_pixel < len(x_data["colors"]) - 1:
+                x_data["colors"] = x_data["colors"][:-(len(x_data["colors"]) - last_nonzero_pixel - 1)]
+            # append margin at start
+            x_data["colors"].insert(0, {
+                "y": x_data["colors"][0]["y"] - margins,
+                "len": direction * margins,
+                "pixel": 0
+            })
+            # append margin at end
+            x_data["colors"].append({
+                "y": x_data["colors"][-1]["y"] + fabs(x_data["colors"][-1]["len"]),
+                "len": direction * margins,
+                "pixel": 0
+            })
+
+            # reverse every two lines
+            if direction == -1:
+                x_data["colors"] = list(reversed(x_data["colors"]))
+                direction = 1
+            else:
+                direction = -1
+            colors.append(x_data)
+
+    return colors
+
+
+class GCodeControl:
+
+    def __init__(self, pwm):
+        self.pwm = pwm
+
+    def off(self):
+        if self.pwm:
+            return "M68 E0 Q0"
+        else:
+            return "M65 P0"
+
+    def fire(self, pixel):
+        if self.pwm:
+            return "M67 E0 Q%d" % pixel
+        else:
+            if pixel == 0:
+                return "M63 P0"
+            else:
+                return "M62 P0"
+
+
+def get_y_pos(y_data):
+    if y_data["len"] > 0:
+        start = float(y_data["y"])
+        end = float(y_data["y"]) + float(y_data["len"])
+    else:
+        start = float(y_data["y"]) - float(y_data["len"])
+        end = float(y_data["y"])
+
+    return start, end
+
+
+def convert(img, point_size, feed, margins, pwm):
+    gcode = GCodeControl(pwm)
+
+    colors = img_to_array(img, point_size, margins)
+
     print ("G21\nG61\nG64")
-    print ("M68 E0 Q0")
-    print ("G0 X0 Y0")
+    print gcode.off()
     print ("M3 S1")
     print ("G1 F%d" % feed)
 
-    for x in range(0, width, 1):
-        old_power = 0
-        print ("(row %d of %d)" % (x + 1, width))
-        print ("M67 E0 Q0")
-        if dirrection == 1:
-            pos_y = margins
-            print ("Y%.3f" % (pos_y))
-        else:
-            pos_y -= margins
-            print ("Y%.3f" % (pos_y))
-        for y in range(0, height, 1):
-            if dirrection == 1:
-                pt_x = x
-                pt_y = y
-                pos_y += point_size
-            else:
-                pt_x = x
-                pt_y = height - y - 1
-                pos_y -= point_size
-            power = 255 - img.getpixel((pt_x, height - pt_y - 1))
-            #if old_power != power:
-            print ("M67 E0 Q%d" % (power))
-            #old_power = power
-            print ("Y%.3f" % (pos_y))
-        print ("M67 E0 Q0")
-        if dirrection == 1:
-            dirrection = 0
-            pos_y += margins
-        else:
-            dirrection = 1
-            pos_y = 0
-        print ("Y%.3f" % (pos_y))
-        pos_x += point_size
-        print ("X%.3f" % pos_x)
+    need_g0 = True
+    for x_data in colors:
+        x_pos = float(x_data["x"])
+        new_line = True
+        for y_data in x_data["colors"]:
+            y_start, y_end = get_y_pos(y_data)
+            if need_g0:
+                print "G0 X%.3f Y%.3f" % (x_pos, y_start)
+                need_g0 = False
+            elif new_line:
+                print gcode.off()
+                print "G1 X%.3f Y%.3f" % (x_pos, y_start)
+            new_line = False
+            print gcode.fire(y_data["pixel"])
+            print "G1 Y%.3f" % y_end
 
-    print ("M68 E0 Q0")
+    print gcode.off()
     print ("M5")
     print ("G0 X0 Y0")
     print ("M2")
@@ -90,13 +154,15 @@ def change_brightness(img, level):
     return img.point(brightness)
 
 
-def enhance_image(img, contrast, brightness):
+def enhance_image(img, contrast, brightness, pwm, dither):
     new_img = img
     if contrast != 0:
         new_img = change_contrast(new_img, contrast)
     if brightness != 0:
         new_img = change_brightness(new_img, brightness)
 
+    if not pwm:
+        new_img = new_img.convert("1", dither=Image.FLOYDSTEINBERG if dither else Image.NONE)
     return new_img
 
 
@@ -233,6 +299,8 @@ def ui(im, im_name):
 
     rc = os.path.expanduser("~/.raster2gcoderc")
     constructors = [
+        ("pwm", checkbutton),
+        ("dither", checkbutton),
         ("keep_ar", checkbutton),
         ("width", intentry),
         ("height", intentry),
@@ -244,6 +312,8 @@ def ui(im, im_name):
     ]
 
     defaults = dict(
+        pwm=True,
+        dither=True,
         keep_ar=True,
         width=w,
         height=h,
@@ -255,14 +325,16 @@ def ui(im, im_name):
     )
 
     texts = dict(
-        keep_ar=_("Keep aspect ratio"),
-        width=_("Picture Width (mm)"),
-        height=_("Picture height (mm)"),
-        point_size=_("Point size (mm)"),
-        feed_rate=_("Feed Rate (mm per minute)"),
-        margins=_("Acceleration margins (mm)"),
-        contrast=_("Image contrast"),
-        brightness=_("Image brightness")
+        pwm="Use PWM mode",
+        dither="Dither",
+        keep_ar="Keep aspect ratio",
+        width="Picture Width (mm)",
+        height="Picture height (mm)",
+        point_size="Point size (mm)",
+        feed_rate="Feed Rate (mm per minute)",
+        margins="Acceleration margins (mm)",
+        contrast="Image contrast",
+        brightness="Image brightness"
     )
 
     try:
@@ -290,7 +362,6 @@ def ui(im, im_name):
             widgets[k].grid(row=row, column=1, sticky="ew")
         row += 1
 
-
     def trace_width(*args):
         if vars['keep_ar'].get() and not TraceScope.lock_trace:
             TraceScope.lock_trace = True
@@ -317,11 +388,15 @@ def ui(im, im_name):
 
     def trace_image(*args):
         try:
-            new_img = enhance_image(UI_Image.src_image, vars['contrast'].get(), vars['brightness'].get())
+            new_img = enhance_image(UI_Image.src_image,
+                                    vars['contrast'].get(),
+                                    vars['brightness'].get(),
+                                    vars['pwm'].get(),
+                                    vars['dither'].get())
             new_img = ImageTk.PhotoImage(new_img, master=app)
             UI_Image.label.configure(image=new_img)
             UI_Image.label.image = new_img
-        except:
+        except Exception:
             pass
 
     vars['width'].trace('w', trace_width)
@@ -329,14 +404,16 @@ def ui(im, im_name):
     vars['keep_ar'].trace('w', trace_ar)
     vars['contrast'].trace('w', trace_image)
     vars['brightness'].trace('w', trace_image)
+    vars['pwm'].trace('w', trace_image)
+    vars['dither'].trace('w', trace_image)
 
     trace_width()
     trace_image()
 
     status = Tkinter.IntVar()
-    bb = Tkinter.Button(b, text=_("OK"), command=lambda:status.set(1), width=8, default="active")
+    bb = Tkinter.Button(b, text=_("OK"), command=lambda: status.set(1), width=8, default="active")
     bb.pack(side="left", padx=4, pady=4)
-    bb = Tkinter.Button(b, text=_("Cancel"), command=lambda:status.set(-1), width=8, default="normal")
+    bb = Tkinter.Button(b, text=_("Cancel"), command=lambda: status.set(-1), width=8, default="normal")
     bb.pack(side="left", padx=4, pady=4)
     
     app.bind("<Escape>", lambda evt: status.set(-1))
@@ -381,8 +458,8 @@ def main():
     new_width = int(float(options['width']) / float(options['point_size']))
     new_height = int(float(options['height']) / float(options['point_size']))
     im = im.resize((new_width, new_height), Image.ANTIALIAS)
-    im = enhance_image(im, options['contrast'], options['brightness'])
-    convert(im, options['point_size'], options['feed_rate'], options['margins'])
+    im = enhance_image(im, options['contrast'], options['brightness'], options['pwm'], options['dither'])
+    convert(im, options['point_size'], options['feed_rate'], options['margins'], options['pwm'])
 
 
 if __name__ == '__main__':
