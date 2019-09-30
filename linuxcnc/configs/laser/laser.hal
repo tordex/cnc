@@ -6,7 +6,7 @@ loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EM
 loadrt hal_parport cfg="0x378 out"
 setp parport.0.reset-time 5000
 loadrt stepgen step_type=0,0,0
-loadrt pwmgen output_type=1
+loadrt pwmgen output_type=0
 loadrt classicladder_rt numPhysInputs=15 numPhysOutputs=15 numS32in=10 numS32out=10 numFloatIn=10 numFloatOut=10
 
 addf parport.0.read base-thread
@@ -26,9 +26,11 @@ net aout-00 => pwmgen.0.value
 net spindle-on <= motion.spindle-on => pwmgen.0.enable
 net spindle-pwm <= pwmgen.0.pwm
 setp pwmgen.0.pwm-freq 1000.0
-setp pwmgen.0.scale 255.0
-setp pwmgen.0.offset 0.0
+#setp pwmgen.0.scale 255.0
+setp pwmgen.0.scale 1000.0
+setp pwmgen.0.offset 0
 setp pwmgen.0.dither-pwm true
+#setp pwmgen.0.dither-pwm false
 net spindle-cmd-rpm     <= motion.spindle-speed-out
 net spindle-cmd-rpm-abs <= motion.spindle-speed-out-abs
 net spindle-cmd-rps     <= motion.spindle-speed-out-rps

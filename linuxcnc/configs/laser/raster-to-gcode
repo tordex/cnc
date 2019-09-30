@@ -1,34 +1,70 @@
 #!/usr/bin/python
 
-import sys
+import Tkinter
+import ConfigParser
 import os
-import gettext
+import math
+import sys
+import tkFileDialog
 from PIL import Image
-import numpy.core
-import rs274.options
-from math import *
+from PIL import ImageTk
 
-BASE = "/usr"
-# BASE = os.environ['EMC2_HOME']
-sys.path.insert(0, os.path.join(BASE, "lib", "python"))
-gettext.install("linuxcnc", localedir=os.path.join(BASE, "share", "locale"), unicode=True)
-plus_inf = numpy.core.Inf
+VERSION = "1.0"
 
 
-def img_to_array(img, point_size, margins):
+class LaserPWM:
+    """
+    Control PWM based Laser
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def off():
+        return "M68 E0 Q0"
+
+    @staticmethod
+    def fire(pixel):
+        return "M67 E0 Q%d" % pixel
+
+
+class LaserTTL:
+    """
+    Control TTL based Laser
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def off():
+        return "M65 P0"
+
+    @staticmethod
+    def fire(pixel):
+        if pixel == 0:
+            return "M63 P0"
+        else:
+            return "M62 P0"
+
+
+def img_to_array(img, point_size, margins, dc_min, dc_max, pwm):
     width, height = img.size
 
     colors = []
     direction = 1
     for x in range(0, width, 1):
         x_data = {
-                "x": float(x - width / 2) * point_size,
-                "colors": []
-            }
+            "x": float(x - width / 2) * point_size,
+            "colors": []
+        }
         add = False
         last_nonzero_pixel = -1
         for y in range(0, height, 1):
             pixel = 255 - img.getpixel((x, height - y - 1))
+            if pwm:
+                pixel = dc_min + int(float(pixel) * (float(dc_max) - float(dc_min)) / 255.0)
             if len(x_data["colors"]) > 0 and x_data["colors"][-1]["pixel"] == pixel:
                 x_data["colors"][-1]["len"] += direction * point_size
             else:
@@ -53,7 +89,7 @@ def img_to_array(img, point_size, margins):
             })
             # append margin at end
             x_data["colors"].append({
-                "y": x_data["colors"][-1]["y"] + fabs(x_data["colors"][-1]["len"]),
+                "y": x_data["colors"][-1]["y"] + math.fabs(x_data["colors"][-1]["len"]),
                 "len": direction * margins,
                 "pixel": 0
             })
@@ -69,27 +105,6 @@ def img_to_array(img, point_size, margins):
     return colors
 
 
-class GCodeControl:
-
-    def __init__(self, pwm):
-        self.pwm = pwm
-
-    def off(self):
-        if self.pwm:
-            return "M68 E0 Q0"
-        else:
-            return "M65 P0"
-
-    def fire(self, pixel):
-        if self.pwm:
-            return "M67 E0 Q%d" % pixel
-        else:
-            if pixel == 0:
-                return "M63 P0"
-            else:
-                return "M62 P0"
-
-
 def get_y_pos(y_data):
     if y_data["len"] > 0:
         start = float(y_data["y"])
@@ -101,10 +116,13 @@ def get_y_pos(y_data):
     return start, end
 
 
-def convert(img, point_size, feed, margins, pwm):
-    gcode = GCodeControl(pwm)
+def convert(img, point_size, feed, margins, pwm, dc_min, dc_max):
+    if pwm:
+        gcode = LaserPWM()
+    else:
+        gcode = LaserTTL()
 
-    colors = img_to_array(img, point_size, margins)
+    colors = img_to_array(img, point_size, margins, dc_min, dc_max, pwm)
 
     print ("G21\nG61\nG64")
     print gcode.off()
@@ -133,13 +151,123 @@ def convert(img, point_size, feed, margins, pwm):
     print ("M2")
 
 
-def change_contrast(img, level):
-    factor = (259.0 * (level + 255.0)) / (255.0 * (259.0 - level))
+class UI:
 
-    def contrast(c):
-        value = int(128.0 + factor * (c - 128.0))
-        return max(0, min(255, value))
-    return img.point(contrast)
+    def __init__(self, title):
+        self.top = Tkinter.Tk()
+        self.top.title(title)
+        self.result = False
+        self.validations = {
+            "validate_double": self.top.register(self.validate_double),
+            "validate_int": self.top.register(self.validate_int),
+        }
+        self.variables = {}
+        self.widgets = {}
+
+    def register_validator(self, name, func):
+        self.validations[name] = self.top.register(func)
+
+    def add_widget(self, data, name=None, root=None):
+        args = data.get('args', {})
+        # create variable
+        if 'variable_key' in data.keys():
+            v = data['variable']()
+            if "variable_default" in data.keys():
+                v.set(data['variable_default'])
+
+            args[data['variable_key']] = v
+            self.variables[name] = v
+
+        # create validation
+        if 'validate' in data.keys():
+            args['validate'] = data['validate']
+            args['validatecommand'] = self.validations[data['validate_function']] + ' %P'
+
+        # set master parameter
+        if root is None:
+            args['master'] = self.top
+        else:
+            args['master'] = root
+
+        # create widget
+        w = data['widget'](**args)
+
+        # set widget configuration
+        if 'config' in data.keys():
+            for key, value in data['config'].items():
+                w[key] = value
+
+        # set widget packing
+        if 'pack' in data.keys():
+            getattr(w, data['pack']['type'])(**data['pack']['args'])
+
+        if name is not None:
+            self.widgets[name] = w
+
+        return w
+
+    @staticmethod
+    def validate_double(new_string):
+        if new_string == "":
+            new_string = "0.0"
+        try:
+            v = float(new_string)
+            return True
+            # True tells Tkinter to accept the new string
+        except ValueError:
+            return False
+            # False means don't accept it
+
+    @staticmethod
+    def validate_int(new_string):
+        if new_string == "":
+            new_string = "0"
+        try:
+            v = int(new_string)
+            return True
+            # True tells Tkinter to accept the new string
+        except ValueError:
+            return False
+            # False means don't accept it
+
+    def on_ok(self):
+        self.result = True
+        self.top.destroy()
+
+    def on_cancel(self):
+        self.result = False
+        self.top.destroy()
+
+    def load_values(self, file_path):
+        if os.path.exists(file_path):
+            config = ConfigParser.RawConfigParser()
+            config.read(file_path)
+            for name, val in self.variables.items():
+                try:
+                    val.set(config.get("values", name))
+                except:
+                    pass
+
+    def save_values(self, file_path):
+        config = ConfigParser.RawConfigParser()
+        config.add_section('values')
+        for name, val in self.variables.items():
+            try:
+                config.set("values", name, val.get())
+            except:
+                pass
+        with open(file_path, "wt") as fp:
+            config.write(fp)
+
+    def mainloop(self):
+        self.top.mainloop()
+        return self.result
+
+    def get_values(self):
+        ret = {}
+        for key, val in self.variables.items():
+            ret[key] = val.get()
+        return ret
 
 
 def change_brightness(img, level):
@@ -151,319 +279,515 @@ def change_brightness(img, level):
         else:
             out = c * factor
         return max(0, min(255, out))
+
     return img.point(brightness)
 
 
-def enhance_image(img, contrast, brightness, pwm, dither):
+def enhance_image(img, contrast, brightness, pwm, mode):
     new_img = img
     if contrast != 0:
         new_img = change_contrast(new_img, contrast)
     if brightness != 0:
         new_img = change_brightness(new_img, brightness)
 
-    if not pwm:
-        new_img = new_img.convert("1", dither=Image.FLOYDSTEINBERG if dither else Image.NONE)
+    updated_mode = mode
+    if mode == "Grayscale" and not pwm:
+        updated_mode = "B&W Dither"
+
+    if updated_mode == "B&W":
+        new_img = new_img.convert("1", dither=Image.NONE)
+    elif updated_mode == "B&W Dither":
+        new_img = new_img.convert("1", dither=Image.FLOYDSTEINBERG)
+
     return new_img
 
 
-def ui(im, im_name):
-    import Tkinter
-    import ImageTk
-    import pickle
-    import nf
+class RasterToGcodeUI(UI):
 
-    app = Tkinter.Tk()
-    rs274.options.install(app)
-    app.tk.call("source", os.path.join(BASE, "share", "axis", "tcl", "combobox.tcl"))
+    def __init__(self, src_image):
+        UI.__init__(self, "Image to laser gcode")
+        self.ignore_changes = False
+        self.src_image = src_image
+        self.img_aspect_ratio = 1
+        self.image_width = 0
+        self.image_height = 0
+        self.create_layout()
 
-    name = os.path.basename(im_name)
-    app.wm_title(_("%s: Raster to gcode") % name)
-    app.wm_iconname(_("Raster to gcode"))
-    w, h = im.size
-    r1 = w / 550.
-    r2 = h / 550.
-    nw = int(w / max(r1, r2))
-    nh = int(h / max(r1, r2))
-    img_aspect_ratio = float(w) / float(h)
+    def reset_contrast(self):
+        self.variables['contrast'].set(False)
 
-    class UI_Image:
-        src_image = None
-        label = None
+    def reset_brightness(self):
+        self.variables['brightness'].set(False)
 
-    ui_image = im.resize((nw, nh), Image.ANTIALIAS)
-    UI_Image.src_image = ui_image
-    ui_image = ImageTk.PhotoImage(ui_image, master=app)
-    i = Tkinter.Label(app, image=ui_image, compound="top",
-                      text=_("Image size: %(w)d x %(h)d pixels") % {'w': im.size[0], 'h': im.size[1]},
-                      justify="left")
-    UI_Image.label = i
-    f = Tkinter.Frame(app)
-    g = Tkinter.Frame(app)
-    b = Tkinter.Frame(app)
-    i.grid(row=0, column=0, sticky="nw")
-    f.grid(row=0, column=1, sticky="nw")
-    b.grid(row=1, column=0, columnspan=2, sticky="ne")
+    def trace_width(self, *args):
+        if not self.variables['not_resize'].get():
+            if self.variables['keep_ar'].get() and not self.ignore_changes:
+                self.ignore_changes = True
+                try:
+                    new_height = int(float(self.variables['width'].get()) / self.img_aspect_ratio)
+                    self.variables['height'].set(new_height)
+                except:
+                    pass
+                self.ignore_changes = False
 
-    def filter_nonint(event):
-        if event.keysym in ("Return", "Tab", "ISO_Left_Tab", "BackSpace"):
-            return
-        if event.char == "":
-            return
-        if event.char in "0123456789":
-            return
-        return "break"
+    def trace_height(self, *args):
+        if not self.variables['not_resize'].get():
+            if self.variables['keep_ar'].get() and not self.ignore_changes:
+                self.ignore_changes = True
+                try:
+                    new_width = int(float(vars['height'].get()) * self.img_aspect_ratio)
+                    self.variables['width'].set(new_width)
+                except:
+                    pass
+                self.ignore_changes = False
 
-    def filter_nonfloat(event):
-        if event.keysym in ("Return", "Tab", "ISO_Left_Tab", "BackSpace"):
-            return
-        if event.char == "":
-            return
-        if event.char in "0123456789.":
-            return
-        return "break"
-        
-    validate_float    = "expr {![regexp {^-?([0-9]+(\.[0-9]*)?|\.[0-9]+|)$} %P]}"
-    validate_int      = "expr {![regexp {^-?([0-9]+|)$} %P]}"
-    validate_posfloat = "expr {![regexp {^?([0-9]+(\.[0-9]*)?|\.[0-9]+|)$} %P]}"
-    validate_posint   = "expr {![regexp {^([0-9]+|)$} %P]}"
-
-    def floatentry(f, v):
-        var = Tkinter.DoubleVar(f)
-        var.set(v)
-        w = Tkinter.Entry(f, textvariable=var, validatecommand=validate_float, validate="key", width=10)
-        return w, var, False
-
-    def intentry(f, v):
-        var = Tkinter.IntVar(f)
-        var.set(v)
-        w = Tkinter.Entry(f, textvariable=var, validatecommand=validate_int, validate="key", width=10)
-        return w, var, False
-
-    def checkbutton(k, v):
-        var = Tkinter.BooleanVar(f)
-        var.set(v)
-        g = Tkinter.Frame(f)
-        w = Tkinter.Checkbutton(g, variable=var, text=_("Yes"))
-        w.pack(side="left")
-        return g, var, False
-
-    def intscale_brightness(k, v, min=-100, max = 100):
-        var = Tkinter.IntVar(f)
-        var.set(v)
-        g = Tkinter.Frame(f, borderwidth=0)
-        w = Tkinter.Scale(g, orient="h", variable=var, from_=min, to=max, showvalue=False)
-        l = Tkinter.Label(g, textvariable=var, width=3)
-        l.pack(side="left")
-        w.pack(side="left", fill="x", expand=1)
-        return g, var, True
-
-    def intscale_contrast(k, v, min=-255, max = 255):
-        var = Tkinter.IntVar(f)
-        var.set(v)
-        g = Tkinter.Frame(f, borderwidth=0)
-        w = Tkinter.Scale(g, orient="h", variable=var, from_=min, to=max, showvalue=False)
-        l = Tkinter.Label(g, textvariable=var, width=3)
-        l.pack(side="left")
-        w.pack(side="left", fill="x", expand=1)
-        return g, var, True
-
-    def _optionmenu(k, v, *options):
-        options = list(options)
-
-        def trace(*args):
-            try:
-                var.set(options.index(svar.get()))
-            except ValueError:
-                pass
-
+    def trace_image(self, *args):
         try:
-            opt = options[v]
-        except (TypeError, IndexError):
-            v = 0
-            opt = options[0]
-
-        var = Tkinter.IntVar(f)    
-        var.set(v)
-        svar = Tkinter.StringVar(f)
-        svar.set(options[v])
-        svar.trace("w", trace)
-        wp = f._w.rstrip(".") + ".c" + svar._name
-        f.tk.call("combobox::combobox", wp, "-editable", 0, "-width",
-                max(len(opt) for opt in options)+3, "-textvariable", svar._name,
-                "-background", "white")
-        f.tk.call(wp, "list", "insert", "end", *options)
-        w = nf.makewidget(f, Tkinter.Widget, wp)
-        return w, var
-
-    def optionmenu(*options): return lambda f, v: _optionmenu(f, v, *options)
-
-    rc = os.path.expanduser("~/.raster2gcoderc")
-    constructors = [
-        ("pwm", checkbutton),
-        ("dither", checkbutton),
-        ("keep_ar", checkbutton),
-        ("width", intentry),
-        ("height", intentry),
-        ("point_size", floatentry),
-        ("feed_rate", intentry),
-        ("margins", intentry),
-        ("contrast", intscale_contrast),
-        ("brightness", intscale_brightness),
-    ]
-
-    defaults = dict(
-        pwm=True,
-        dither=True,
-        keep_ar=True,
-        width=w,
-        height=h,
-        point_size=0.1,
-        feed_rate=3000,
-        margins=5,
-        contrast=0,
-        brightness=0,
-    )
-
-    texts = dict(
-        pwm="Use PWM mode",
-        dither="Dither",
-        keep_ar="Keep aspect ratio",
-        width="Picture Width (mm)",
-        height="Picture height (mm)",
-        point_size="Point size (mm)",
-        feed_rate="Feed Rate (mm per minute)",
-        margins="Acceleration margins (mm)",
-        contrast="Image contrast",
-        brightness="Image brightness"
-    )
-
-    try:
-        defaults.update(pickle.load(open(rc, "rb")))
-    except (IOError, pickle.PickleError): pass
-
-    vars = {}
-    widgets = {}
-
-    class TraceScope:
-        lock_trace = False
-
-    row = 0
-    for k, con in constructors:
-        v = defaults[k]
-        text = texts.get(k, k.replace("_", " "))
-        lab = Tkinter.Label(f, text=text)
-        widgets[k], vars[k], ltop = con(f, v)
-        if ltop:
-            lab.grid(row=row, column=0, columnspan=2, sticky="w")
-            row += 1
-            widgets[k].grid(row=row, column=0, columnspan=2, sticky="ew")
-        else:
-            lab.grid(row=row, column=0, sticky="w")
-            widgets[k].grid(row=row, column=1, sticky="ew")
-        row += 1
-
-    def trace_width(*args):
-        if vars['keep_ar'].get() and not TraceScope.lock_trace:
-            TraceScope.lock_trace = True
-            try:
-                new_height = int(float(vars['width'].get()) / img_aspect_ratio)
-                vars['height'].set(new_height)
-            except:
-                pass
-            TraceScope.lock_trace = False
-
-    def trace_height(*args):
-        if vars['keep_ar'].get() and not TraceScope.lock_trace:
-            TraceScope.lock_trace = True
-            try:
-                new_width = int(float(vars['height'].get()) * img_aspect_ratio)
-                vars['width'].set(new_width)
-            except:
-                pass
-            TraceScope.lock_trace = False
-
-    def trace_ar(*args):
-        if vars['keep_ar'].get():
-            trace_width()
-
-    def trace_image(*args):
-        try:
-            new_img = enhance_image(UI_Image.src_image,
-                                    vars['contrast'].get(),
-                                    vars['brightness'].get(),
-                                    vars['pwm'].get(),
-                                    vars['dither'].get())
-            new_img = ImageTk.PhotoImage(new_img, master=app)
-            UI_Image.label.configure(image=new_img)
-            UI_Image.label.image = new_img
+            new_img = enhance_image(self.src_image,
+                                    self.variables['contrast'].get(),
+                                    self.variables['brightness'].get(),
+                                    self.variables['pwm'].get(),
+                                    self.variables['mode'].get())
+            new_img = ImageTk.PhotoImage(new_img, master=self.top)
+            self.widgets['image'].configure(image=new_img)
+            self.widgets['image'].image = new_img
         except Exception:
             pass
 
-    vars['width'].trace('w', trace_width)
-    vars['height'].trace('w', trace_height)
-    vars['keep_ar'].trace('w', trace_ar)
-    vars['contrast'].trace('w', trace_image)
-    vars['brightness'].trace('w', trace_image)
-    vars['pwm'].trace('w', trace_image)
-    vars['dither'].trace('w', trace_image)
+    def trace_aspect_ratio(self, *args):
+        if self.variables['keep_ar'].get():
+            self.trace_width()
 
-    trace_width()
-    trace_image()
+    def trace_point_size(self, *args):
+        if self.variables['not_resize'].get():
+            self.ignore_changes = True
 
-    status = Tkinter.IntVar()
-    bb = Tkinter.Button(b, text=_("OK"), command=lambda: status.set(1), width=8, default="active")
-    bb.pack(side="left", padx=4, pady=4)
-    bb = Tkinter.Button(b, text=_("Cancel"), command=lambda: status.set(-1), width=8, default="normal")
-    bb.pack(side="left", padx=4, pady=4)
-    
-    app.bind("<Escape>", lambda evt: status.set(-1))
-    app.bind("<Return>", lambda evt: status.set(1))
-    app.wm_protocol("WM_DELETE_WINDOW", lambda: status.set(-1))
-    app.wm_resizable(0, 0)
+            self.variables['width'].set(self.image_width * self.variables['point_size'].get())
+            self.variables['height'].set(self.image_height * self.variables['point_size'].get())
 
-    app.wait_visibility()
-    app.tk.call("after", "idle", ("after", "idle", "focus [tk_focusNext .]"))
-    app.wait_variable(status)
+            self.ignore_changes = False
 
-    for k, v in vars.items():
-        defaults[k] = v.get()
+    def trace_resize(self, *args):
+        if self.variables['not_resize'].get():
+            self.widgets['keep_ar'].config(state=Tkinter.DISABLED)
+            self.widgets['width'].config(state=Tkinter.DISABLED)
+            self.widgets['height'].config(state=Tkinter.DISABLED)
+            self.widgets['width_l'].config(state=Tkinter.DISABLED)
+            self.widgets['height_l'].config(state=Tkinter.DISABLED)
 
-    app.destroy()
+            self.ignore_changes = True
 
-    if status.get() == -1:
-        raise SystemExit(_("image-to-gcode: User pressed cancel"))
+            self.variables['width'].set(self.image_width * self.variables['point_size'].get())
+            self.variables['height'].set(self.image_height * self.variables['point_size'].get())
 
-    pickle.dump(defaults, open(rc, "wb"))
+            self.ignore_changes = False
+        else:
+            self.widgets['keep_ar'].config(state=Tkinter.NORMAL)
+            self.widgets['width'].config(state=Tkinter.NORMAL)
+            self.widgets['height'].config(state=Tkinter.NORMAL)
+            self.widgets['width_l'].config(state=Tkinter.NORMAL)
+            self.widgets['height_l'].config(state=Tkinter.NORMAL)
 
-    return defaults
+    def _setup_traces(self):
+        self.variables['contrast'].trace('w', self.trace_image)
+        self.variables['brightness'].trace('w', self.trace_image)
+        self.variables['pwm'].trace('w', self.trace_image)
+        self.variables['mode'].trace('w', self.trace_image)
+        self.variables['width'].trace('w', self.trace_width)
+        self.variables['height'].trace('w', self.trace_height)
+        self.variables['keep_ar'].trace('w', self.trace_aspect_ratio)
+        self.variables['not_resize'].trace('w', self.trace_resize)
+        self.variables['point_size'].trace('w', self.trace_point_size)
+
+    @staticmethod
+    def define_label(text, row, column, columnspan=1):
+        return {
+            "widget": Tkinter.Label,
+            "config": {
+                "text": text,
+                "padx": 10,
+                "justify": Tkinter.LEFT,
+            },
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": column,
+                    "columnspan": columnspan,
+                    "sticky": Tkinter.W,
+                    "padx": 3,
+                    "pady": 3
+                }
+            }
+        }
+
+    @staticmethod
+    def define_entry_double(width, row, column, default=0.0):
+        return {
+            "widget": Tkinter.Entry,
+            "config": {
+                "width": width
+            },
+            "pack": {
+                "type": "grid",
+                "args": {"row": row, "column": column, "sticky": Tkinter.EW, "padx": 3, "pady": 3}
+            },
+            "variable_key": "textvariable",
+            "variable_default": default,
+            "variable": Tkinter.DoubleVar,
+            "validate": "key",
+            "validate_function": "validate_double"
+        }
+
+    @staticmethod
+    def define_entry_int(width, row, column, default=0):
+        return {
+            "widget": Tkinter.Entry,
+            "config": {
+                "width": width
+            },
+            "pack": {
+                "type": "grid",
+                "args": {"row": row, "column": column, "sticky": Tkinter.EW, "padx": 3, "pady": 3}
+            },
+            "variable_key": "textvariable",
+            "variable": Tkinter.IntVar,
+            "variable_default": default,
+            "validate": "key",
+            "validate_function": "validate_int"
+        }
+
+    @staticmethod
+    def define_checkbox(text, row, column, columnspan=1):
+        return {
+            "widget": Tkinter.Checkbutton,
+            "config": {
+                "text": text,
+                "padx": 10,
+                "justify": Tkinter.LEFT,
+            },
+            "variable_key": "variable",
+            "variable": Tkinter.BooleanVar,
+            "variable_default": 0,
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": column,
+                    "columnspan": columnspan,
+                    "sticky": Tkinter.W,
+                    "padx": 3,
+                    "pady": 3
+                }
+            }
+        }
+
+    def create_layout(self):
+        image_frame = self.add_widget(data={
+            "widget": Tkinter.Frame,
+            "pack": {
+                "type": "grid",
+                "args":
+                    {
+                        "row": 0,
+                        "column": 0,
+                        "sticky": Tkinter.N
+                    }
+            },
+        })
+
+        self.image_width, self.image_height = self.src_image.size
+        r1 = self.image_width / 550.
+        r2 = self.image_height / 550.
+        nw = int(self.image_width / max(r1, r2))
+        nh = int(self.image_height / max(r1, r2))
+        self.img_aspect_ratio = float(self.image_width) / float(self.image_height)
+
+        self.src_image = self.src_image.resize((nw, nh), Image.ANTIALIAS)
+        ui_image = ImageTk.PhotoImage(image=self.src_image, master=self.top)
+        label = self.add_widget(name="image", root=image_frame, data={
+            "widget": Tkinter.Label,
+            "config": {
+                "text": "Image size: {width} x {height} pixels".format(width=self.image_width, height=self.image_height),
+                "padx": 10,
+                "justify": Tkinter.LEFT,
+                "compound": Tkinter.TOP,
+                "image": ui_image,
+            },
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": 0,
+                    "column": 0,
+                    "stick": Tkinter.NSEW,
+                }
+            },
+        })
+        label.image = ui_image
+
+        controls_frame = self.add_widget(data={
+            "widget": Tkinter.Frame,
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": 0,
+                    "column": 1,
+                    "sticky": Tkinter.N
+                }
+            },
+        })
+        row = 0
+
+        self.add_widget(name="pwm", data=self.define_checkbox("Use PWM mode", row=row, column=0, columnspan=2),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Picture Mode:", row=row, column=0),
+                        root=controls_frame)
+        var = Tkinter.StringVar(self.top)
+        var.set("Grayscale")
+        mode_ctl = Tkinter.OptionMenu(controls_frame, var, "Grayscale", "B&W", "B&W Dither")
+        mode_ctl.grid(row=row, column=1)
+        self.widgets['mode'] = mode_ctl
+        self.variables['mode'] = var
+        row += 1
+
+        self.add_widget(name="not_resize",
+                        data=self.define_checkbox("Don't resize picture", row=row, column=0, columnspan=2),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(name="keep_ar",
+                        data=self.define_checkbox("Keep aspect ratio", row=row, column=0, columnspan=2),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(name="width_l", data=self.define_label("Picture Width (mm):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="width", data=self.define_entry_double(10, row=row, column=1,
+                                                                    default=float(self.image_width)),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(name="height_l", data=self.define_label("Picture Height (mm):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="height", data=self.define_entry_double(10, row=row, column=1,
+                                                                     default=float(self.image_height)),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Point size (mm):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="point_size", data=self.define_entry_double(10, row=row, column=1, default=0.1),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Feed Rate (mm per minute):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="feed_rate", data=self.define_entry_int(10, row=row, column=1, default=1000),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Minimum DC Value (0-1000):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="dc_min", data=self.define_entry_int(10, row=row, column=1, default=0),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Maximum DC Value (0-1000):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="dc_max", data=self.define_entry_int(10, row=row, column=1, default=1000),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Acceleration margins (mm):", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(name="margins", data=self.define_entry_double(10, row=row, column=1, default=float(10)),
+                        root=controls_frame)
+        row += 1
+
+        self.add_widget(data=self.define_label("Image contrast", row=row, column=0),
+                        root=controls_frame)
+        self.add_widget(root=controls_frame, data={
+            "widget": Tkinter.Button,
+            "config": {
+                "text": "reset",
+                "command": self.reset_contrast,
+                "width": 8,
+            },
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": 1,
+                    "stick": Tkinter.NSEW,
+                }
+            }
+        })
+        row += 1
+        self.add_widget(name="contrast", root=controls_frame, data={
+            "widget": Tkinter.Scale,
+            "config": {
+                "orient": Tkinter.HORIZONTAL,
+                "from": -255,
+                "to": 255,
+                "showvalue": True
+            },
+            "variable_key": "variable",
+            "variable": Tkinter.IntVar,
+            "variable_default": 0,
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": 0,
+                    "columnspan": 2,
+                    "stick": Tkinter.NSEW,
+                }
+            },
+        })
+        row += 1
+
+        self.add_widget(data=self.define_label("Image brightness", row=row, column=0, columnspan=2),
+                        root=controls_frame)
+        self.add_widget(root=controls_frame, data={
+            "widget": Tkinter.Button,
+            "config": {
+                "text": "reset",
+                "command": self.reset_brightness,
+                "width": 8,
+            },
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": 1,
+                    "stick": Tkinter.NSEW,
+                }
+            }
+        })
+        row += 1
+        self.add_widget(name="brightness", root=controls_frame, data={
+            "widget": Tkinter.Scale,
+            "config": {
+                "orient": Tkinter.HORIZONTAL,
+                "from": -100,
+                "to": 100,
+                "showvalue": True
+            },
+            "variable_key": "variable",
+            "variable": Tkinter.IntVar,
+            "variable_default": 0,
+            "pack": {
+                "type": "grid",
+                "args": {
+                    "row": row,
+                    "column": 0,
+                    "columnspan": 2,
+                    "stick": Tkinter.NSEW,
+                }
+            },
+        })
+        row += 1
+
+        frame = self.add_widget(data={
+            "widget": Tkinter.Frame,
+            "pack": {
+                "type": "grid",
+                "args": {"row": row,
+                         "column": 0,
+                         "columnspan": 2,
+                         "stick": Tkinter.NSEW,
+                         }
+            },
+        })
+        row += 1
+
+        self.add_widget(root=frame, data={
+            "widget": Tkinter.Button,
+            "config": {
+                "text": "OK",
+                "command": self.on_ok,
+                "width": 8,
+                "padx": 5,
+                "pady": 5
+            },
+            "pack": {
+                "type": "pack",
+                "args": {"side": Tkinter.RIGHT, "padx": 3, "pady": 3}
+            },
+        })
+
+        self.add_widget(root=frame, data={
+            "widget": Tkinter.Button,
+            "config": {
+                "text": "Cancel",
+                "command": self.on_cancel,
+                "width": 8,
+                "padx": 5,
+                "pady": 5
+            },
+            "pack": {
+                "type": "pack",
+                "args": {"side": Tkinter.RIGHT, "padx": 3, "pady": 3}
+            },
+        })
+
+    def mainloop(self):
+        self._setup_traces()
+        self.trace_resize()
+        self.trace_width()
+        self.trace_image()
+        return UI.mainloop(self)
+
+
+def change_contrast(img, level):
+    factor = (259.0 * (level + 255.0)) / (255.0 * (259.0 - level))
+
+    def contrast(c):
+        value = int(128.0 + factor * (c - 128.0))
+        return max(0, min(255, value))
+
+    return img.point(contrast)
+
+
+def ui(image):
+    ui_obj = RasterToGcodeUI(image)
+    ui_obj.load_values("raster2gcode.cfg")
+    if ui_obj.mainloop():
+        ui_obj.save_values("raster2gcode.cfg")
+        return ui_obj.get_values()
+    return None
 
 
 def main():
     if len(sys.argv) > 1:
         im_name = sys.argv[1]
     else:
-        import tkFileDialog, Tkinter
         im_name = tkFileDialog.askopenfilename(defaultextension=".png",
                                                filetypes=(
-                                                   (_("Depth images"), ".gif .png .jpg"),
-                                                   (_("All files"), "*")))
+                                                   ("Depth images", ".gif .png .jpg"),
+                                                   ("All files", "*")))
         if not im_name:
             raise SystemExit
         Tkinter._default_root.destroy()
         Tkinter._default_root = None
-    im = Image.open(im_name)
-    im = im.convert("L") #grayscale
-    w, h = im.size
-    options = ui(im, im_name)
-    new_width = int(float(options['width']) / float(options['point_size']))
-    new_height = int(float(options['height']) / float(options['point_size']))
-    im = im.resize((new_width, new_height), Image.ANTIALIAS)
-    im = enhance_image(im, options['contrast'], options['brightness'], options['pwm'], options['dither'])
-    convert(im, options['point_size'], options['feed_rate'], options['margins'], options['pwm'])
+    image = Image.open(im_name)
+    image = image.convert("L")  # grayscale
+    options = ui(image)
+    if options is not None:
+        if not options['not_resize']:
+            new_width = int(float(options['width']) / float(options['point_size']))
+            new_height = int(float(options['height']) / float(options['point_size']))
+            im = image.resize((new_width, new_height), Image.ANTIALIAS)
+        else:
+            im = image
+        im = enhance_image(im, options['contrast'], options['brightness'], options['pwm'], options['mode'])
+        convert(im, options['point_size'], options['feed_rate'], options['margins'], options['pwm'], options['dc_min'],
+                options['dc_max'])
+    else:
+        exit(1)
 
 
 if __name__ == '__main__':
     main()
-
-# vim:sw=4:sts=4:et:
-
