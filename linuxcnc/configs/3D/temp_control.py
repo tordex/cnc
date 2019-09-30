@@ -1,6 +1,14 @@
+#!/usr/bin/python
+
 import termctl
+import time
 
 ctl = termctl.TemperatureControl("/dev/ttyUSB0")
+time.sleep(5)
+
+ctl.set_beta25(termctl.HOTEND_EXTRUDER, 4267)
+ctl.set_beta25(termctl.HOTEND_BED, 3950)
+
 
 while True:
     print("Enter command: ")

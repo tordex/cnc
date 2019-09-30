@@ -15,6 +15,7 @@ CMD_START_TUNING = 0x83
 CMD_STOP_TUNING = 0x84
 CMD_GET_TEMP = 0x85
 CMD_SET_FAN = 0x86
+CMD_SET_BETA25 = 0x87
 
 
 class TemperatureControl:
@@ -118,4 +119,8 @@ class TemperatureControl:
     def set_fan(self, fanid, speed):
         data = bytearray(struct.pack("I", int(speed)))
         self._send_packet(fanid, CMD_SET_FAN, data)
+
+    def set_beta25(self, hotend, val):
+        data = bytearray(struct.pack("I", int(val)))
+        self._send_packet(hotend, CMD_SET_BETA25, data)
 

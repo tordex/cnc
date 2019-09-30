@@ -27,6 +27,8 @@ class PID_ATune
 	double GetKp();										// * once autotune is complete, these functions contain the
 	double GetKi();										//   computed tuning parameters.  
 	double GetKd();										//
+
+  void start(double out_start, double temp);
 	
   private:
     void FinishUp();

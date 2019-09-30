@@ -21,6 +21,19 @@ PID_ATune::PID_ATune(double* Input, double* Output)
 }
 
 
+void PID_ATune::start(double out_start, double temp)
+{
+  peakType = 0;
+  peakCount=0;
+  justchanged=false;
+  absMax=temp;
+  absMin=temp;
+  setpoint = temp;
+  running = true;
+  outputStart = out_start;
+  *output = outputStart + oStep;
+  lastTime = millis();
+}
 
 void PID_ATune::Cancel()
 {
@@ -42,27 +55,12 @@ int PID_ATune::Runtime()
 	lastTime = now;
 	double refVal = *input;
 	justevaled=true;
-	if(!running)
-	{ //initialize working variables the first time around
-		peakType = 0;
-		peakCount=0;
-		justchanged=false;
-		absMax=refVal;
-		absMin=refVal;
-		setpoint = refVal;
-		running = true;
-		outputStart = *output;
-		*output = outputStart+oStep;
-	}
-	else
-	{
-		if(refVal>absMax)absMax=refVal;
-		if(refVal<absMin)absMin=refVal;
-	}
+	if(refVal>absMax)absMax=refVal;
+	if(refVal<absMin)absMin=refVal;
 	
 	//oscillate the output base on the input's relation to the setpoint
 	
-	if(refVal>setpoint+noiseBand) *output = outputStart-oStep;
+	if(refVal>setpoint+noiseBand) *output = outputStart;
 	else if (refVal<setpoint-noiseBand) *output = outputStart+oStep;
 	
 	

@@ -25,6 +25,7 @@ class Hotend
   unsigned long m_window_start_time;
   bool          m_tune;
   bool          m_is_relay;
+  int           m_beta25;
 
   PID           m_pid;
   PID_ATune     m_aTune;
@@ -46,7 +47,8 @@ public:
         m_aTune(&m_currentTemp, &m_pid_out),
         m_off(true),
         m_window_size(5000),
-        m_tune(false)
+        m_tune(false),
+        m_beta25(3950)
   {}
 
   void init();
@@ -59,6 +61,10 @@ public:
     m_pid.SetTunings(Kp, Ki, Kd);
   }
   void compute();
+  void set_beta25(int beta25)
+  {
+    m_beta25 = beta25;
+  }
   void start_tuning(double start_value);
   void stop_tuning();
   void set_temperature(int temp);

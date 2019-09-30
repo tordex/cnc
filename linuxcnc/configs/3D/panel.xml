@@ -26,6 +26,16 @@
 			<text>"OFF"</text>
 		</button>
         </table>
+	<table>
+	<tablerow/>
+		<label text="SERIAL STATUS: " font="('Fixed',12)"/>
+		<led>
+			<halpin>"fail"</halpin> 
+			<size>20</size> 
+			<on_color>"red"</on_color>
+			<off_color>"green"</off_color>
+		</led>
+        </table>
 	<labelframe text="Zero Axes">
 		<button>
 		<halpin>"zero-x-y"</halpin>
@@ -45,5 +55,26 @@
 		<font>('Fixed',12)</font>
 		</button>
 
+	</labelframe>
+	<labelframe text="Calibration">
+		<button>
+		<halpin>"z-axis-touchoff"</halpin>
+		<text>"Touch Off Z"</text>
+		<font>('Fixed',12)</font>
+		</button>
+
+		<button>
+		<halpin>"measure-mesh"</halpin>
+		<text>"Measure Mesh"</text>
+		<font>('Fixed',12)</font>
+		</button>
+	</labelframe>
+	<labelframe text="Z Correction">
+		<checkbutton>
+		<halpin>"enable-z-correct"</halpin>
+		<text>"Enable Z Correction"</text>
+		<font>('Fixed',12)</font>
+		</checkbutton>
+		<number halpin="delta-z" width="5" font="('Fixed',12)"/>
 	</labelframe>
 </pyvcp>

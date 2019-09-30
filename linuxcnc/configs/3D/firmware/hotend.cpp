@@ -41,7 +41,7 @@ void Hotend::end_input_read()
   
     m_currentTemp = tr / THERMISTOR_R; // (R/Ro)
     m_currentTemp = log(m_currentTemp); // ln(R/Ro)
-    m_currentTemp /= B; // 1/B * ln(R/Ro)
+    m_currentTemp /= (double) m_beta25; // 1/B * ln(R/Ro)
     m_currentTemp += 1.0 / (NOMINAL_T + 273.15); // + (1/To)
     m_currentTemp = 1.0 / m_currentTemp; // Invert
     m_currentTemp -= 273.15; 
@@ -130,10 +130,10 @@ void Hotend::start_tuning(double start_value)
 {
   if(!m_tune)
   {
-    m_pid_out = start_value;
-    m_aTune.SetNoiseBand(10);
-    m_aTune.SetOutputStep(250);
-    m_aTune.SetLookbackSec(20);
+    m_aTune.SetNoiseBand(2);
+    m_aTune.SetOutputStep(255);
+    m_aTune.SetLookbackSec(30);
+    m_aTune.start(0, start_value);
     m_tune = true;
   }
 }

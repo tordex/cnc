@@ -6,6 +6,10 @@ net temp-bed-in => pyvcp.bed-temp
 net fan => pyvcp.fan-out
 net extruder => pyvcp.extruder-temp-out
 net bed => pyvcp.bed-temp-out
+net serial-status => pyvcp.fail
+
+net enable-z-correct <= pyvcp.enable-z-correct
+net delta-z => pyvcp.delta-z
 
 # mdi command 0 MDI_COMMAND = G10 L20 P1 X0 Y0
 net zero-x-y halui.mdi-command-00 <= pyvcp.zero-x-y
@@ -24,3 +28,9 @@ net off-bed halui.mdi-command-04 <= pyvcp.off-bed
 
 # mdi command 5 MDI_COMMAND = M107
 net off-fan halui.mdi-command-05 <= pyvcp.off-fan
+
+# mdi command 6 MDI_COMMAND = o101
+net z-axis-touchoff halui.mdi-command-06 <= pyvcp.z-axis-touchoff
+
+# mdi command 7 MDI_COMMAND = o100
+net measure-mesh halui.mdi-command-07 <= pyvcp.measure-mesh

@@ -19,11 +19,20 @@ c.newpin("temp-out-extruder", hal.HAL_FLOAT, hal.HAL_IN)
 c.newpin("temp-in-bed", hal.HAL_FLOAT, hal.HAL_OUT)
 c.newpin("temp-out-bed", hal.HAL_FLOAT, hal.HAL_IN)
 c.newpin("fan-out", hal.HAL_FLOAT, hal.HAL_IN)
+c.newpin("fail", hal.HAL_BIT, hal.HAL_OUT)
 
 c.ready()
 
 ctl = termctl.TemperatureControl(PORT)
 time.sleep(5)
+
+if len(sys.argv) >= 4:
+    ctl.set_beta25(termctl.HOTEND_EXTRUDER, int(sys.argv[2]))
+    ctl.set_beta25(termctl.HOTEND_BED, int(sys.argv[3]))
+
+#ctl.set_tuning(termctl.HOTEND_EXTRUDER, 20.0, 0.3, 2.6)
+#ctl.set_tuning(termctl.HOTEND_EXTRUDER, 20.0, 0.31, 3.5)
+##ctl.set_tuning(termctl.HOTEND_EXTRUDER, 30.0, 0.30, 5.0)
 
 try:
     while 1:
@@ -32,9 +41,11 @@ try:
             info_temp = ctl.get_temp(termctl.HOTEND_EXTRUDER)
             print(info_temp)
             if info_temp is not None:
+                c['fail'] = 0
                 c['temp-in-extruder'] = int(info_temp['extruder'])
                 c['temp-in-bed'] = int(info_temp['hotbed'])
             else:
+                c['fail'] = 1
                 print "Got None temperature"
             # Set temperature
             ctl.set_temperature(termctl.HOTEND_EXTRUDER, int(c['temp-out-extruder']))
@@ -47,6 +58,7 @@ try:
         except (KeyboardInterrupt,):
             raise SystemExit, 0
         except:
+            c['fail'] = 1
             print "Unknown exeption. Reconnecting..."
             is_ok = False
             ctl.close()

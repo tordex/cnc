@@ -8,6 +8,7 @@
 #define HOTBED_INPUT_PIN      A1
 #define HOTBED_OUTPUT_PIN     5
 #define FAN0_OUTPUT_PIN       6
+#define COOLING_OUTPUT_PIN    7
 
 struct HOTEND_OUT_INFO
 {
@@ -34,6 +35,7 @@ struct SET_TUNE_PARAMS
 
 Hotend extruder(EXTRUDER_INPUT_PIN, EXTRUDER_OUTPUT_PIN, false);
 Hotend bed(HOTBED_INPUT_PIN, HOTBED_OUTPUT_PIN, false);
+unsigned long cooling_change_time = 0;
 
 EasyTransfer ET(&Serial);
 
@@ -45,6 +47,9 @@ void setup()
     bed.init();
     pinMode(FAN0_OUTPUT_PIN, OUTPUT);
     analogWrite(FAN0_OUTPUT_PIN, 0);
+    pinMode(COOLING_OUTPUT_PIN, OUTPUT);
+    digitalWrite(COOLING_OUTPUT_PIN, 0);
+    cooling_change_time = millis();
 }
 
 
@@ -63,6 +68,19 @@ void process_hotends()
 
     extruder.compute();
     bed.compute();
+
+    if(millis() - cooling_change_time > 500)
+    {
+      if(extruder.get_current_temp() > 40)
+      {
+        digitalWrite(COOLING_OUTPUT_PIN, 1);
+        cooling_change_time = millis();
+      } else
+      {
+        digitalWrite(COOLING_OUTPUT_PIN, 0);
+        cooling_change_time = millis();
+      }
+    }
 }
 
 #define CMD_GET_DATA          0x80
@@ -72,6 +90,7 @@ void process_hotends()
 #define CMD_SET_STOP_TUNING   0x84
 #define CMD_GET_TEMP          0x85
 #define CMD_SET_FAN           0x86
+#define CMD_SET_BETA25        0x87
 
 void loop() 
 {
@@ -135,6 +154,13 @@ void loop()
         {
           uint16_t* params = (uint16_t*) rx_buffer;
           hotend->set_temperature((int) params[0]);
+        }
+        break;
+      case CMD_SET_BETA25:
+        if(ET.get_packet_size() == 2 + sizeof(uint32_t))
+        {
+          uint32_t* params = (uint32_t*) rx_buffer;
+          hotend->set_beta25((int) params[0]);
         }
         break;
       case CMD_SET_START_TUNING:

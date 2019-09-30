@@ -1,0 +1,30 @@
+o102 sub
+( Rectangular Probing                                                   )
+(                                                                       )
+( This program repeatedly probes in a regular XY grid and writes the    )
+( probed location to the file 'probe-results.txt' in the same directory )
+( as the .ini file                                                      )
+
+(Configuration section)
+G21   (Millimeters)
+F25   (probe speed)
+
+#4=0
+#6=20 (probe count)
+
+#7=5.0 (Z safety)
+#8=-20.0 (Z probe)
+(End configuration section)
+
+(PROBEOPEN probe-test.txt)
+#9=0
+G0Z#7
+O1 while [#9 lt #6]
+    G38.2Z#8
+    G0Z#7
+    #9=[#9+1]
+O1 endwhile
+
+(PROBECLOSE)
+G0Z#7
+o100 endsub
