@@ -15,7 +15,7 @@ sudo halcompile --install ethpwm.c
 ``
 
 Then add lines into your HAL file:
-``
+```
 loadrt ethpwm iface="eth1" dst="02:81:3a:fe:15:7a"
 addf ethpwm.update servo-thread
 net aout-00 => ethpwm.0.value
@@ -23,7 +23,7 @@ net spindle-on <= motion.spindle-on => ethpwm.0.enable
 setp ethpwm.0.pwm-freq 20000.0
 setp ethpwm.0.scale 1000.0
 setp ethpwm.0.offset 0
-``
+```
 Actual configuration depends of you machine. ``loadrt`` loads **ethpwm** module with parameters:
 
  - iface - interface name to send packets
